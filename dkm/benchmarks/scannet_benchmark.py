@@ -7,33 +7,41 @@ from tqdm import tqdm
 
 
 class ScanNetBenchmark:
-    def __init__(self, data_root="data/scannet") -> None:
+    def __init__(self, data_root="data/scannet", npz_path=None, scans_dir=None) -> None:
         self.data_root = data_root
+        self._npz_path = npz_path if npz_path is not None else osp.join(data_root, "test.npz")
+        self._scans_dir = scans_dir if scans_dir is not None else osp.join(data_root, "scans_test")
 
-    def benchmark(self, model, model_name = None):
+    def benchmark(self, model, model_name=None, max_pairs=None, dump_dir=None, shuffle=True):
+        if dump_dir is not None:
+            import os
+            os.makedirs(dump_dir, exist_ok=True)
         model.train(False)
         with torch.no_grad():
-            data_root = self.data_root
-            tmp = np.load(osp.join(data_root, "test.npz"))
+            tmp = np.load(self._npz_path)
             pairs, rel_pose = tmp["name"], tmp["rel_pose"]
             tot_e_t, tot_e_R, tot_e_pose = [], [], []
-            pair_inds = np.random.choice(
-                range(len(pairs)), size=len(pairs), replace=False
-            )
+            if shuffle:
+                pair_inds = np.random.choice(
+                    range(len(pairs)), size=len(pairs), replace=False
+                )
+            else:
+                pair_inds = np.arange(len(pairs))
+            if max_pairs is not None:
+                pair_inds = pair_inds[:max_pairs]
+            dump_idx = 0
             for pairind in tqdm(pair_inds, smoothing=0.9):
                 scene = pairs[pairind]
                 scene_name = f"scene0{scene[0]}_00"
                 im1_path = osp.join(
-                        self.data_root,
-                        "scans_test",
+                        self._scans_dir,
                         scene_name,
                         "color",
                         f"{scene[2]}.jpg",
                     )
                 im1 = Image.open(im1_path)
                 im2_path = osp.join(
-                        self.data_root,
-                        "scans_test",
+                        self._scans_dir,
                         scene_name,
                         "color",
                         f"{scene[3]}.jpg",
@@ -46,8 +54,7 @@ class ScanNetBenchmark:
                         np.array([float(i) for i in r.split()])
                         for r in open(
                             osp.join(
-                                self.data_root,
-                                "scans_test",
+                                self._scans_dir,
                                 scene_name,
                                 "intrinsic",
                                 "intrinsic_color.txt",
@@ -67,6 +74,19 @@ class ScanNetBenchmark:
                 sparse_matches, sparse_certainty = model.sample(
                     dense_matches, dense_certainty, 5000
                 )
+                if dump_dir is not None:
+                    test_transform = get_tuple_transform_ops(
+                        resize=(model.h_resized, model.w_resized), normalize=True
+                    )
+                    t1, t2 = test_transform((Image.open(im1_path), Image.open(im2_path)))
+                    torch.save({
+                        'image0': t1,
+                        'image1': t2,
+                        'im0_path': str(im1_path),
+                        'im1_path': str(im2_path),
+                        'sparse_matches': sparse_matches.cpu(),
+                    }, osp.join(dump_dir, f'{dump_idx:05d}.pt'))
+                    dump_idx += 1
                 scale1 = 480 / min(w1, h1)
                 scale2 = 480 / min(w2, h2)
                 w1, h1 = scale1 * w1, scale1 * h1
@@ -75,6 +95,7 @@ class ScanNetBenchmark:
                 K2 = K2 * scale2
 
                 offset = 0.5
+                sparse_matches = sparse_matches.cpu().numpy()
                 kpts1 = sparse_matches[:, :2]
                 kpts1 = (
                     np.stack(

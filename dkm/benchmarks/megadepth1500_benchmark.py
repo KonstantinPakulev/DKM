@@ -23,17 +23,27 @@ class Megadepth1500Benchmark:
         ]
         self.data_root = data_root
 
-    def benchmark(self, model):
+    def benchmark(self, model, max_pairs=None, dump_dir=None):
+        if dump_dir is not None:
+            import os
+            os.makedirs(dump_dir, exist_ok=True)
         with torch.no_grad():
             data_root = self.data_root
             tot_e_t, tot_e_R, tot_e_pose = [], [], []
+            remaining = max_pairs
+            dump_idx = 0
             for scene_ind in range(len(self.scenes)):
+                if remaining is not None and remaining <= 0:
+                    break
                 scene = self.scenes[scene_ind]
                 pairs = scene["pair_infos"]
                 intrinsics = scene["intrinsics"]
                 poses = scene["poses"]
                 im_paths = scene["image_paths"]
-                pair_inds = range(len(pairs))
+                n = min(len(pairs), remaining) if remaining is not None else len(pairs)
+                pair_inds = range(n)
+                if remaining is not None:
+                    remaining -= n
                 for pairind in tqdm(pair_inds):
                     idx1, idx2 = pairs[pairind][0]
                     K1 = intrinsics[idx1].copy()
@@ -59,6 +69,20 @@ class Megadepth1500Benchmark:
                     sparse_matches,_ = model.sample(
                         dense_matches, dense_certainty, 5000
                     )
+                    if dump_dir is not None:
+                        import os
+                        test_transform = get_tuple_transform_ops(
+                            resize=(model.h_resized, model.w_resized), normalize=True
+                        )
+                        t1, t2 = test_transform((Image.open(im1_path), Image.open(im2_path)))
+                        torch.save({
+                            'image0': t1,
+                            'image1': t2,
+                            'im0_path': str(im1_path),
+                            'im1_path': str(im2_path),
+                            'sparse_matches': sparse_matches.cpu(),
+                        }, os.path.join(dump_dir, f'{dump_idx:05d}.pt'))
+                        dump_idx += 1
                     kpts1 = sparse_matches[:, :2]
                     kpts1 = (
                         torch.stack(

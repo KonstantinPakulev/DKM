@@ -1,83 +1,55 @@
+import argparse
 import json
+import os
+import numpy as np
+import torch
 
-def test_mega1500(model):
+
+SUMMERTIME_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
+DEFAULT_MEGADEPTH_ROOT = '/mnt/sda/datasets/MegaDepth'
+DEFAULT_NPZ_DIR = os.path.join(SUMMERTIME_ROOT, 'third_party/efficientloftr/assets/megadepth_test_1500_scene_info')
+DEFAULT_OUTPUT = os.path.join(SUMMERTIME_ROOT, 'projects/Frontier/reports/dkm/dkm_megadepth_1500_native_results.json')
+
+
+def test_mega1500(model, megadepth_root, npz_dir, max_pairs=None, output=None, dump_dir=None):
     from dkm.benchmarks import Megadepth1500Benchmark
     model.h_resized = 660
     model.w_resized = 880
     model.upsample_preds = True
-    #model.upsample_res = (968, 1472)
     model.upsample_res = (1152, 1536)
     model.use_soft_mutual_nearest_neighbours = False
-    megaloftr_benchmark = Megadepth1500Benchmark("data/megadepth")
-    megaloftr_results = []
-    megaloftr_results.append(megaloftr_benchmark.benchmark(model))
-    json.dump(megaloftr_results, open(f"results/mega1500_{model.name}_1152_1536_upsample_8_4_2_1_again2.json", "w"))
+
+    benchmark = Megadepth1500Benchmark(npz_dir)
+    benchmark.data_root = megadepth_root
+
+    results = benchmark.benchmark(model, max_pairs=max_pairs, dump_dir=dump_dir)
+
+    print(f'\n=== DKMv3 outdoor — MegaDepth-1500 ===')
+    for k, v in results.items():
+        print(f'  {k}: {v:.4f}')
+
+    if output:
+        os.makedirs(os.path.dirname(output), exist_ok=True)
+        with open(output, 'w') as f:
+            json.dump(results, f, indent=2)
+        print(f'\nSaved to {output}')
+
+    return results
 
 
-def test_mega_8_scenes(model):
-    from dkm.benchmarks import Megadepth1500Benchmark
-    model.h_resized = 660
-    model.w_resized = 880
-    model.upsample_preds = True
-    model.upsample_res = (1152, 1536)
-    megaloftr_benchmark = Megadepth1500Benchmark("data/megadepth",
-                                                scene_names=['mega_8_scenes_0019_0.1_0.3.npz',
-                                                            'mega_8_scenes_0025_0.1_0.3.npz',
-                                                            'mega_8_scenes_0021_0.1_0.3.npz',
-                                                            'mega_8_scenes_0008_0.1_0.3.npz',
-                                                            'mega_8_scenes_0032_0.1_0.3.npz',
-                                                            'mega_8_scenes_1589_0.1_0.3.npz',
-                                                            'mega_8_scenes_0063_0.1_0.3.npz',
-                                                            'mega_8_scenes_0024_0.1_0.3.npz',
-                                                            'mega_8_scenes_0019_0.3_0.5.npz',
-                                                            'mega_8_scenes_0025_0.3_0.5.npz',
-                                                            'mega_8_scenes_0021_0.3_0.5.npz',
-                                                            'mega_8_scenes_0008_0.3_0.5.npz',
-                                                            'mega_8_scenes_0032_0.3_0.5.npz',
-                                                            'mega_8_scenes_1589_0.3_0.5.npz',
-                                                            'mega_8_scenes_0063_0.3_0.5.npz',
-                                                            'mega_8_scenes_0024_0.3_0.5.npz']
-                                                            )
-    megaloftr_results = []
-    megaloftr_results.append(megaloftr_benchmark.benchmark(model))
-    json.dump(megaloftr_results, open(f"results/mega_8_scenes_{model.name}_1152_1536_upsample_8_4_2_1.json", "w"))
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--megadepth_root', default=DEFAULT_MEGADEPTH_ROOT)
+    parser.add_argument('--npz_dir', default=DEFAULT_NPZ_DIR)
+    parser.add_argument('--output', default=DEFAULT_OUTPUT)
+    parser.add_argument('--max_pairs', type=int, default=None)
+    parser.add_argument('--seed', type=int, default=0)
+    parser.add_argument('--dump_dir', default=None)
+    args = parser.parse_args()
 
+    torch.manual_seed(args.seed)
 
-def test_hpatches(model):
-    from dkm.benchmarks import (
-    HpatchesHomogBenchmark,
-    )
-    model.h_resized = 540
-    model.w_resized = 720
-    model.upsample_preds = False
-    homog_benchmark = HpatchesHomogBenchmark("data/hpatches")
-    homog_results = []
-    homog_results.append(homog_benchmark.benchmark(model))
-    json.dump(
-        homog_results, open(f"results/hpatches_homog_{model.name}.json", "w")
-    )
-
-def test_st_pauls(model):
-    raise NotImplementedError("Not available yet")
-    from dkm.benchmarks import (
-    StPaulsCathedralBenchmark,
-    )
-    model.h_resized = 540
-    model.w_resized = 720
-    model.upsample_preds = True
-    st_pauls_cathedral_benchmark = StPaulsCathedralBenchmark("data/st_pauls_cathedral")
-    st_pauls_cathedral_results = []
-    st_pauls_cathedral_results.append(st_pauls_cathedral_benchmark.benchmark(model))
-    json.dump(
-        st_pauls_cathedral_results, open(f"results/st_pauls_{model.name}.json", "w")
-    )
-
-
-if __name__ == "__main__":
     from dkm.models.model_zoo import DKMv3_outdoor
     model = DKMv3_outdoor()
-    test_mega1500(model)
-    #test_mega_8_scenes(model)
-    # test_hpatches(model)
-    # test_st_paults(model) # TODO: benchmark provided by ECO-TR authors, not sure about uploading.
-    
+    test_mega1500(model, args.megadepth_root, args.npz_dir,
+                  max_pairs=args.max_pairs, output=args.output, dump_dir=args.dump_dir)
