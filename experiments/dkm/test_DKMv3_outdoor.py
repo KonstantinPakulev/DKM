@@ -42,6 +42,8 @@ if __name__ == '__main__':
     parser.add_argument('--megadepth_root', default=DEFAULT_MEGADEPTH_ROOT)
     parser.add_argument('--npz_dir', default=DEFAULT_NPZ_DIR)
     parser.add_argument('--output', default=DEFAULT_OUTPUT)
+    parser.add_argument('--checkpoint', default=None,
+                        help='Path to DKMv3 outdoor checkpoint (skips torch.hub download)')
     parser.add_argument('--max_pairs', type=int, default=None)
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--dump_dir', default=None)
@@ -50,6 +52,6 @@ if __name__ == '__main__':
     torch.manual_seed(args.seed)
 
     from dkm.models.model_zoo import DKMv3_outdoor
-    model = DKMv3_outdoor()
+    model = DKMv3_outdoor(path_to_weights=args.checkpoint)
     test_mega1500(model, args.megadepth_root, args.npz_dir,
                   max_pairs=args.max_pairs, output=args.output, dump_dir=args.dump_dir)
